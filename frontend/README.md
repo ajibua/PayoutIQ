@@ -79,7 +79,7 @@ VITE_API_URL=http://localhost:8000
 ```bash
 npm run dev
 ```
-The server will start at [http://localhost:5173](http://localhost:5173) (or [http://localhost:5174](http://localhost:5174)).
+The server will start at `http://localhost:5173`
 
 ### 5. Build for Production
 Compiles the static production bundle to `dist/`:

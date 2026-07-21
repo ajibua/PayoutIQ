@@ -1,9 +1,3 @@
-@echo off
-echo ===================================================
-echo             PayoutIQ Local Startup Script
-echo ===================================================
-echo.
-
 echo 1. Launching FastAPI Backend on Port 8000...
 start "PayoutIQ Backend API Server" cmd /c "cd backend && .venv\Scripts\python -m uvicorn main:app --reload --port 8000"
 

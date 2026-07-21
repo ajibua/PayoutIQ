@@ -3,9 +3,12 @@ import jwt
 import bcrypt
 import logging
 import httpx
+import secrets
+import hashlib
+import base64
 from datetime import datetime, timedelta
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, EmailStr
@@ -72,6 +75,14 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, JWT_SECRET, algorithm=JWT_ALGORITHM)
     return encoded_jwt
+
+def generate_pkce_pair() -> tuple:
+    # 64 random bytes URL-safe base64 encoded (around 86 characters)
+    verifier = secrets.token_urlsafe(64)
+    # S256 challenge
+    sha256_hash = hashlib.sha256(verifier.encode('utf-8')).digest()
+    challenge = base64.urlsafe_b64encode(sha256_hash).decode('utf-8').replace('=', '')
+    return verifier, challenge
 
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
     credentials_exception = HTTPException(
@@ -184,29 +195,61 @@ def register_oauth_user(email: str, first_name: str, last_name: str, org: str, d
 
 # --- 1. GOOGLE OAUTH ---
 @router.get("/google/login")
-def google_login():
+def google_login(state: Optional[str] = None):
     if not GOOGLE_CLIENT_ID:
         raise HTTPException(
             status_code=501,
             detail="Google Social Login is not configured on this server. Please set GOOGLE_CLIENT_ID in your .env file."
         )
+    
+    verifier, challenge = generate_pkce_pair()
+    
     url = (
         f"https://accounts.google.com/o/oauth2/v2/auth"
         f"?response_type=code"
         f"&client_id={GOOGLE_CLIENT_ID}"
         f"&redirect_uri={GOOGLE_REDIRECT_URI}"
         f"&scope=openid%20profile%20email"
+        f"&code_challenge={challenge}"
+        f"&code_challenge_method=S256"
     )
-    return RedirectResponse(url)
+    if state:
+        url += f"&state={state}"
+        
+    response = RedirectResponse(url)
+    
+    # Securely store code_verifier in an HTTP-only cookie
+    is_secure = FRONTEND_URL.lower().startswith("https://")
+    response.set_cookie(
+        key="pkce_verifier",
+        value=verifier,
+        httponly=True,
+        secure=is_secure,
+        samesite="lax",
+        max_age=600  # 10 minutes expiry
+    )
+    return response
 
 @router.get("/google/callback")
-async def google_callback(code: str, db: Session = Depends(get_db)):
+async def google_callback(
+    code: str, 
+    request: Request,
+    state: Optional[str] = None, 
+    db: Session = Depends(get_db)
+):
     if not GOOGLE_CLIENT_ID:
         raise HTTPException(status_code=501, detail="Google Social Login is not configured on this server.")
         
+    pkce_verifier = request.cookies.get("pkce_verifier")
+    if not pkce_verifier:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="PKCE verification failed: Missing code_verifier session cookie. Please try logging in again."
+        )
+        
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            # Exchange token
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            # Exchange token, passing the code_verifier
             t_res = await client.post(
                 "https://oauth2.googleapis.com/token",
                 data={
@@ -214,7 +257,8 @@ async def google_callback(code: str, db: Session = Depends(get_db)):
                     "code": code,
                     "redirect_uri": GOOGLE_REDIRECT_URI,
                     "client_id": GOOGLE_CLIENT_ID,
-                    "client_secret": GOOGLE_CLIENT_SECRET
+                    "client_secret": GOOGLE_CLIENT_SECRET,
+                    "code_verifier": pkce_verifier
                 }
             )
             t_data = t_res.json()
@@ -237,13 +281,32 @@ async def google_callback(code: str, db: Session = Depends(get_db)):
                 raise HTTPException(status_code=400, detail="Failed to retrieve email address from Google profile data")
                 
             jwt_token = register_oauth_user(email, first_name, last_name, "Google Organization", db)
-            return RedirectResponse(f"{FRONTEND_URL}/#token={jwt_token}")
+            
+            # Resolve and validate target redirect URL
+            target_frontend = FRONTEND_URL
+            if state:
+                state_clean = state.strip().rstrip('/')
+                allowed_origins_env = os.getenv("CORS_ALLOWED_ORIGINS", "")
+                allowed_origins = [FRONTEND_URL.strip().rstrip('/')]
+                if allowed_origins_env:
+                    allowed_origins.extend([o.strip().rstrip('/') for o in allowed_origins_env.split(",") if o.strip()])
+                
+                # Trust standard local addresses and configured domains
+                if any(state_clean.startswith(o) for o in allowed_origins) or "localhost" in state_clean or "127.0.0.1" in state_clean:
+                    target_frontend = state_clean
+
+            target_frontend = target_frontend.strip().rstrip('/')
+            
+            response = RedirectResponse(f"{target_frontend}/#token={jwt_token}")
+            # Clean up verifier cookie
+            response.delete_cookie(key="pkce_verifier")
+            return response
             
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Google Callback Error: {str(e)}")
-        raise HTTPException(status_code=502, detail=f"Google authentication failed: {str(e)}")
+        logger.error(f"Google Callback Error: {type(e).__name__}: {e!r}")
+        raise HTTPException(status_code=502, detail=f"Google authentication failed:  {type(e).__name__}")
 
 @router.get("/me")
 def get_me(current_user: User = Depends(get_current_user)):

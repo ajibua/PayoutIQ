@@ -2,6 +2,7 @@ import os
 import json
 import logging
 import re
+import asyncio
 from typing import List, Dict, Any
 import httpx
 from dotenv import load_dotenv
@@ -11,6 +12,7 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
 
 class GeminiService:
     def __init__(self):
@@ -18,7 +20,7 @@ class GeminiService:
         if self.is_simulation:
             logger.info("Gemini API key missing. Running in SIMULATION mode.")
         else:
-            logger.info("Gemini API key found. Running in LIVE mode.")
+            logger.info(f"Gemini API key found. Running in LIVE mode using model: {GEMINI_MODEL}")
 
     async def extract_payout_list(self, raw_text: str) -> List[Dict[str, Any]]:
         """
@@ -28,7 +30,7 @@ class GeminiService:
         if self.is_simulation:
             return self._simulate_extraction(raw_text)
 
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key={GEMINI_API_KEY}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
         
         system_instruction = (
             "You are an expert data extraction assistant. Parse the raw input text to extract a list of bank payout details. "
@@ -62,30 +64,55 @@ class GeminiService:
             }
         }
 
-        try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(url, json=payload, headers={"Content-Type": "application/json"})
-                
-                if response.status_code == 200:
-                    resp_json = response.json()
-                    candidates = resp_json.get("candidates", [])
-                    if candidates:
-                        content_parts = candidates[0].get("content", {}).get("parts", [])
-                        if content_parts:
-                            text_out = content_parts[0].get("text", "[]")
-                            # Parse JSON array directly
-                            payees = json.loads(text_out)
-                            return self._clean_extracted_payees(payees)
+        max_retries = 3
+        backoff_factor = 1.5
+        current_delay = 1.0
+
+        for attempt in range(max_retries + 1):
+            try:
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    response = await client.post(url, json=payload, headers={"Content-Type": "application/json"})
                     
-                    logger.error(f"Gemini response structure unexpected: {response.text}")
-                    return self._simulate_extraction(raw_text)
+                    if response.status_code == 200:
+                        resp_json = response.json()
+                        candidates = resp_json.get("candidates", [])
+                        if candidates:
+                            content_parts = candidates[0].get("content", {}).get("parts", [])
+                            if content_parts:
+                                text_out = content_parts[0].get("text", "[]")
+                                payees = json.loads(text_out)
+                                return self._clean_extracted_payees(payees)
+                        
+                        logger.error(f"Gemini response structure unexpected: {response.text}")
+                        return self._simulate_extraction(raw_text)
+                        
+                    elif response.status_code in [429, 502, 503, 504] and attempt < max_retries:
+                        logger.warning(
+                            f"Gemini API returned transient status {response.status_code}. "
+                            f"Retrying in {current_delay}s (attempt {attempt + 1}/{max_retries})..."
+                        )
+                        await asyncio.sleep(current_delay)
+                        current_delay *= backoff_factor
+                        continue
+                    else:
+                        logger.error(f"Gemini API error (Status {response.status_code}): {response.text}")
+                        return self._simulate_extraction(raw_text)
+                        
+            except (httpx.ConnectError, httpx.TimeoutException) as e:
+                if attempt < max_retries:
+                    logger.warning(
+                        f"Gemini API connection/timeout error: {type(e).__name__}. "
+                        f"Retrying in {current_delay}s (attempt {attempt + 1}/{max_retries})..."
+                    )
+                    await asyncio.sleep(current_delay)
+                    current_delay *= backoff_factor
+                    continue
                 else:
-                    logger.error(f"Gemini API error (Status {response.status_code}): {response.text}")
+                    logger.error(f"Error calling Gemini API after {max_retries} retries: {str(e)}")
                     return self._simulate_extraction(raw_text)
-                    
-        except Exception as e:
-            logger.error(f"Error calling Gemini API: {str(e)}")
-            return self._simulate_extraction(raw_text)
+            except Exception as e:
+                logger.error(f"Unexpected error calling Gemini API: {str(e)}")
+                return self._simulate_extraction(raw_text)
 
     def _clean_extracted_payees(self, payees: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         cleaned = []

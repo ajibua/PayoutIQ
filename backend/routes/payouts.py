@@ -274,6 +274,13 @@ async def parse_messy_payouts(payload: ParseRequest, current_user: User = Depend
             "warning_details": warning_details
         })
 
+    import json
+    logger.info(
+        "\n=== PARSED PAYOUTS JSON RESPONSE ===\n"
+        f"{json.dumps(verified_results, indent=2, default=str)}\n"
+        "====================================\n"
+    )
+
     return {"payees": verified_results}
 
 @router.post("/batches")

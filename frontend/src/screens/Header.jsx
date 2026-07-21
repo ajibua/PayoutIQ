@@ -1,7 +1,12 @@
 import React, { useState } from 'react';
 
-export default function Header({ user, currentScreen, onNavigate, onLogout }) {
+export default function Header({ user, currentScreen, onNavigate, onLogout, balance }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const formatCurrency = (val) => {
+    if (val === null || val === undefined) return '';
+    return new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN' }).format(val);
+  };
 
   // Authenticated menu items (No Dashboard anymore)
   const navItems = [
@@ -56,6 +61,12 @@ export default function Header({ user, currentScreen, onNavigate, onLogout }) {
             </nav>
 
             <div className="flex align-center gap-2 nav-actions" style={{ display: 'none' }}>
+              {balance !== null && (
+                <div style={{ marginRight: '12px', padding: '4px 12px', borderRadius: '8px', backgroundColor: 'rgba(96, 165, 250, 0.08)', border: '1px solid rgba(96, 165, 250, 0.2)', display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                  <span style={{ fontSize: '9px', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--primary)', fontWeight: '700' }}>Wallet Balance</span>
+                  <span style={{ fontSize: '13px', fontWeight: '800', color: 'var(--primary)' }}>{formatCurrency(balance)}</span>
+                </div>
+              )}
               <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column' }}>
                 <span style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-main)' }}>
                   Hi, {user.first_name}
@@ -180,6 +191,12 @@ export default function Header({ user, currentScreen, onNavigate, onLogout }) {
               {item.label}
             </button>
           ))}
+          {balance !== null && (
+            <div style={{ padding: '8px 12px', borderRadius: '8px', backgroundColor: 'rgba(96, 165, 250, 0.08)', border: '1px solid rgba(96, 165, 250, 0.2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
+              <span style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--primary)', fontWeight: '700' }}>Balance</span>
+              <span style={{ fontSize: '13.5px', fontWeight: '800', color: 'var(--primary)' }}>{formatCurrency(balance)}</span>
+            </div>
+          )}
           <div style={{ borderTop: '1px solid var(--border)', margin: '8px 0', padding: '12px 0 0 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
               <div style={{ fontSize: '13px', fontWeight: '700' }}>{user.first_name} {user.last_name}</div>

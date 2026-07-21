@@ -17,6 +17,7 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
 export default function App() {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(null);
+  const [balance, setBalance] = useState(null);
   const [currentScreen, setCurrentScreen] = useState('LANDING'); 
   const [loadingApp, setLoadingApp] = useState(true);
   
@@ -24,6 +25,29 @@ export default function App() {
   const [extractedPayees, setExtractedPayees] = useState([]);
   const [activeBatch, setActiveBatch] = useState(null);
   const [activeBatchId, setActiveBatchId] = useState(null);
+
+  const fetchBalance = async (authToken) => {
+    const activeToken = authToken || token || localStorage.getItem('payoutiq_token');
+    if (!activeToken) return;
+    try {
+      const response = await fetch(`${API_URL}/api/payouts/balance`, {
+        headers: { 'Authorization': `Bearer ${activeToken}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setBalance(data.balance);
+      }
+    } catch (e) {
+      console.error('Failed to fetch wallet balance:', e);
+    }
+  };
+
+  // Re-fetch balance automatically when moving between screens
+  useEffect(() => {
+    if (token && ['UPLOAD', 'REVIEW', 'CONFIRMATION', 'STATUS', 'HISTORY'].includes(currentScreen)) {
+      fetchBalance(token);
+    }
+  }, [currentScreen, token]);
 
   // Persistence & HTML5 Routing: Sync initial path and check for token on mount
   useEffect(() => {
@@ -36,7 +60,8 @@ export default function App() {
       localStorage.setItem('payoutiq_token', parsedToken);
       savedToken = parsedToken;
       // Clean up URL fragment
-      window.history.replaceState(null, null, window.location.pathname);
+      const cleanPathname = window.location.pathname.replace(/^\/+/, '/');
+      window.history.replaceState(null, null, cleanPathname);
     }
 
     // Determine target screen based on URL pathname
@@ -74,6 +99,7 @@ export default function App() {
       .then(userData => {
         setUser(userData);
         setToken(savedToken);
+        fetchBalance(savedToken);
         // If logged in, go to their loaded path (or upload page if they loaded landing/login/signup)
         if (['LANDING', 'LOGIN', 'SIGNUP'].includes(targetScreen)) {
           setCurrentScreen('UPLOAD');
@@ -146,6 +172,7 @@ export default function App() {
     localStorage.setItem('payoutiq_token', payload.access_token);
     setUser(payload.user);
     setToken(payload.access_token);
+    fetchBalance(payload.access_token);
     setCurrentScreen('UPLOAD');
     window.history.pushState(null, '', '/upload');
   };
@@ -154,6 +181,7 @@ export default function App() {
     localStorage.removeItem('payoutiq_token');
     setUser(null);
     setToken(null);
+    setBalance(null);
     setCurrentScreen('LANDING');
     window.history.pushState(null, '', '/');
   };
@@ -260,6 +288,7 @@ export default function App() {
             onBack={() => handleNavigate('UPLOAD')}
             API_URL={API_URL}
             token={token}
+            balance={balance}
           />
         );
       case 'CONFIRMATION':
@@ -327,6 +356,7 @@ export default function App() {
         currentScreen={currentScreen}
         onNavigate={handleNavigate}
         onLogout={handleLogout}
+        balance={balance}
       />
       <main style={{ flex: '1 0 auto' }}>
         {renderScreen()}

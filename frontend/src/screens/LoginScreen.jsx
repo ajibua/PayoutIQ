@@ -38,8 +38,9 @@ export default function LoginScreen({ onLogin, onNavigateToSignup, API_URL }) {
 
   const handleOAuth = (provider) => {
     setLoading(true);
-    // Redirect browser directly to backend login endpoint for real OAuth authentication
-    window.location.href = `${API_URL}/api/auth/${provider}/login`;
+    // Pass current origin as state parameter so backend can redirect back here
+    const currentOrigin = window.location.origin;
+    window.location.href = `${API_URL}/api/auth/${provider}/login?state=${encodeURIComponent(currentOrigin)}`;
   };
 
   const handleForgotPassword = (e) => {

@@ -25,8 +25,11 @@ logger = logging.getLogger("payoutiq")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Initializing database tables...")
-    Base.metadata.create_all(bind=engine)
-    logger.info("Database tables initialized successfully.")
+    try:
+        Base.metadata.create_all(bind=engine)
+        logger.info("Database tables initialized successfully.")
+    except Exception as e:
+        logger.error(f"Failed to auto-create database tables on startup (ignoring): {e}")
     yield
     logger.info("Shutting down PayoutIQ Backend.")
 

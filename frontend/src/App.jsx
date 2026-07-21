@@ -12,15 +12,15 @@ import StatusScreen from './screens/StatusScreen';
 import HistoryScreen from './screens/HistoryScreen';
 
 // Set up dynamic API target URL
-const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
+const API_URL = import.meta.env.VITE_API_URL || 'https://payout-iq-moqm.vercel.app';
 
 export default function App() {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(null);
   const [balance, setBalance] = useState(null);
-  const [currentScreen, setCurrentScreen] = useState('LANDING'); 
+  const [currentScreen, setCurrentScreen] = useState('LANDING');
   const [loadingApp, setLoadingApp] = useState(true);
-  
+
   // Data sharing states
   const [extractedPayees, setExtractedPayees] = useState([]);
   const [activeBatch, setActiveBatch] = useState(null);
@@ -54,7 +54,7 @@ export default function App() {
     // Intercept OAuth callback redirect token in URL hash fragment
     const hash = window.location.hash;
     let savedToken = localStorage.getItem('payoutiq_token');
-    
+
     if (hash && hash.includes('token=')) {
       const parsedToken = hash.split('token=')[1];
       localStorage.setItem('payoutiq_token', parsedToken);
@@ -67,7 +67,7 @@ export default function App() {
     // Determine target screen based on URL pathname
     const pathname = window.location.pathname.toLowerCase();
     let targetScreen = 'LANDING';
-    
+
     if (pathname === '/login') targetScreen = 'LOGIN';
     else if (pathname === '/signup') targetScreen = 'SIGNUP';
     else if (pathname === '/upload') targetScreen = 'UPLOAD';
@@ -90,37 +90,37 @@ export default function App() {
       fetch(`${API_URL}/api/auth/me`, {
         headers: { 'Authorization': `Bearer ${savedToken}` }
       })
-      .then(res => {
-        if (res.ok) {
-          return res.json();
-        }
-        throw new Error("Token expired");
-      })
-      .then(userData => {
-        setUser(userData);
-        setToken(savedToken);
-        fetchBalance(savedToken);
-        // If logged in, go to their loaded path (or upload page if they loaded landing/login/signup)
-        if (['LANDING', 'LOGIN', 'SIGNUP'].includes(targetScreen)) {
-          setCurrentScreen('UPLOAD');
-          window.history.replaceState(null, '', '/upload');
-        } else {
-          setCurrentScreen(targetScreen);
-        }
-      })
-      .catch(() => {
-        localStorage.removeItem('payoutiq_token');
-        // Send to login if they were on a protected page
-        if (!['LANDING', 'LOGIN', 'SIGNUP'].includes(targetScreen)) {
-          setCurrentScreen('LOGIN');
-          window.history.replaceState(null, '', '/login');
-        } else {
-          setCurrentScreen(targetScreen);
-        }
-      })
-      .finally(() => {
-        setLoadingApp(false);
-      });
+        .then(res => {
+          if (res.ok) {
+            return res.json();
+          }
+          throw new Error("Token expired");
+        })
+        .then(userData => {
+          setUser(userData);
+          setToken(savedToken);
+          fetchBalance(savedToken);
+          // If logged in, go to their loaded path (or upload page if they loaded landing/login/signup)
+          if (['LANDING', 'LOGIN', 'SIGNUP'].includes(targetScreen)) {
+            setCurrentScreen('UPLOAD');
+            window.history.replaceState(null, '', '/upload');
+          } else {
+            setCurrentScreen(targetScreen);
+          }
+        })
+        .catch(() => {
+          localStorage.removeItem('payoutiq_token');
+          // Send to login if they were on a protected page
+          if (!['LANDING', 'LOGIN', 'SIGNUP'].includes(targetScreen)) {
+            setCurrentScreen('LOGIN');
+            window.history.replaceState(null, '', '/login');
+          } else {
+            setCurrentScreen(targetScreen);
+          }
+        })
+        .finally(() => {
+          setLoadingApp(false);
+        });
     } else {
       // If not logged in and trying to access a protected page, redirect to Login
       if (!['LANDING', 'LOGIN', 'SIGNUP'].includes(targetScreen)) {
@@ -138,7 +138,7 @@ export default function App() {
     const handlePopState = () => {
       const pathname = window.location.pathname.toLowerCase();
       let targetScreen = 'LANDING';
-      
+
       if (pathname === '/login') targetScreen = 'LOGIN';
       else if (pathname === '/signup') targetScreen = 'SIGNUP';
       else if (pathname === '/upload') targetScreen = 'UPLOAD';
@@ -153,7 +153,7 @@ export default function App() {
         }
       }
       else if (pathname === '/history') targetScreen = 'HISTORY';
-      
+
       // Enforce auth checks on popstate
       const isLoggedIn = !!localStorage.getItem('payoutiq_token');
       if (!isLoggedIn && !['LANDING', 'LOGIN', 'SIGNUP'].includes(targetScreen)) {
@@ -163,7 +163,7 @@ export default function App() {
         setCurrentScreen(targetScreen);
       }
     };
-    
+
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
@@ -216,7 +216,7 @@ export default function App() {
         body: JSON.stringify(batchPayload)
       });
       const data = await response.json();
-      
+
       if (response.ok) {
         setActiveBatch({
           batch_id: data.batch_id,

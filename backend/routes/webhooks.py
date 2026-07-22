@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/payouts/webhook", tags=["webhooks"])
 
-MONNIFY_CLIENT_SECRET = os.environ["MONNIFY_CLIENT_SECRET"]  # set this in Vercel env vars
+MONNIFY_CLIENT_SECRET = os.environ["MONNIFY_CLIENT_SECRET"]
 
 
 def verify_monnify_signature(raw_body: bytes, signature_header: str | None) -> bool:

@@ -1,4 +1,8 @@
+import hashlib
+import hmac
 import logging
+import os
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from database import get_db
@@ -8,12 +12,33 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/payouts/webhook", tags=["webhooks"])
 
+MONNIFY_CLIENT_SECRET = os.environ["MONNIFY_CLIENT_SECRET"]  # set this in Vercel env vars
+
+
+def verify_monnify_signature(raw_body: bytes, signature_header: str | None) -> bool:
+    if not signature_header:
+        return False
+    computed = hmac.new(
+        MONNIFY_CLIENT_SECRET.encode("utf-8"),
+        raw_body,
+        hashlib.sha512,
+    ).hexdigest()
+    return hmac.compare_digest(computed, signature_header)
+
+
 @router.post("")
 async def monnify_webhook(request: Request, db: Session = Depends(get_db)):
     """
     Listens to real-time disbursement callbacks from Monnify.
     Updates the transaction and batch records accordingly.
     """
+    raw_body = await request.body()
+    signature = request.headers.get("monnify-signature")
+
+    if not verify_monnify_signature(raw_body, signature):
+        logger.warning("Rejected webhook: invalid or missing signature.")
+        raise HTTPException(status_code=401, detail="Invalid webhook signature.")
+
     try:
         payload = await request.json()
         logger.info(f"Received Webhook from Monnify: {payload}")
